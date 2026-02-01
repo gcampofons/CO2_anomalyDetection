@@ -19,27 +19,27 @@ The model detects:
 
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
-| **Accuracy** | 92.7% | Correctly classifies 93% of sequences |
-| **Precision** | 39.0% | 39% of predicted anomalies are real |
-| **Recall** | 76.5% | Detects 77% of all real anomalies |
-| **F1-Score** | 51.7% | Good balance between precision and recall |
-| **AUC-ROC** | 0.851 | Excellent discriminative power |
+| **Accuracy** | 93.7% | Correctly classifies 94% of sequences |
+| **Precision** | 42.1% | 42% of predicted anomalies are real |
+| **Recall** | 88.3% | Detects 88% of all real anomalies |
+| **F1-Score** | 57.0% | Good balance between precision and recall |
+| **AUC-ROC** | 0.911 | Excellent discriminative power |
 
 ### Model Comparison (Optimized Configuration)
 
 | Model | Architecture | Accuracy | Recall | F1-Score | AUC |
 |-------|-------------|----------|--------|----------|-----|
-| **Model 1** ⭐ | Simple AE-LSTM | **92.5%** | **76.3%** | **49.3%** | **0.848** |
-| **Model 2** | Single LSTM | 89.7% | 46.7% | 30.2% | 0.693 |
-| **Model 3** | Double LSTM | 89.7% | 46.4% | 30.0% | 0.691 |
-| **Model 4** | Deep LSTM | 89.7% | 47.1% | 30.4% | 0.695 |
-| **Model 5** | CNN-LSTM Hybrid | 89.4% | 44.0% | 28.4% | 0.678 |
-| **Model 6** | Bidirectional LSTM | 89.9% | 48.8% | 31.5% | 0.704 |
+| **Model 1** ⭐ | Simple AE-LSTM | **93.7%** | **88.3%** | **57.0%** | **0.911** |
+| **Model 2** | Single LSTM | 89.6% | 45.7% | 29.5% | 0.687 |
+| **Model 3** | Double LSTM | 89.6% | 45.7% | 29.5% | 0.687 |
+| **Model 4** | Deep LSTM | 89.8% | 48.1% | 31.1% | 0.700 |
+| **Model 5** | CNN-LSTM Hybrid | 89.7% | 47.1% | 30.4% | 0.695 |
+| **Model 6** | Bidirectional LSTM | 90.1% | 51.2% | 33.1% | 0.716 |
 
 **Recommendation:** Use **Model 1** for production deployment:
 - Best overall performance with realistic ground truth (4.8% anomalies)
-- Excellent recall (76.3%) for anomaly detection
-- Outstanding AUC (0.848) for pattern discrimination
+- Excellent recall (88.3%) for anomaly detection
+- Outstanding AUC (0.911) for pattern discrimination
 - Simple and efficient architecture for edge deployment
 
 ## � Dataset
@@ -228,9 +228,9 @@ Detailed performance metrics for all 6 models:
 
 **Model 1 Performance Analysis:**
 ```
-✅ High Recall (76.3%): Detects majority of anomalies
-✅ Good Precision (36.4%): Balanced false positive rate
-✅ Excellent AUC (0.848): Strong pattern discrimination
+✅ High Recall (88.3%): Detects majority of anomalies
+✅ Good Precision (42.1%): Balanced false positive rate
+✅ Excellent AUC (0.911): Strong pattern discrimination
 ✅ Simple Architecture: Efficient for IoT deployment
 ```
 
@@ -290,40 +290,44 @@ LSTM(16) → RepeatVector → LSTM(16) → TimeDistributed(Dense(1))
 ```
 LSTM(16) → Dropout(0.2) → TimeDistributed(Dense(1))
 ```
-- Lightweight and efficient
-- Good performance (43% recall, 29% F1-score)
-- Suitable for resource-constrained devices
+- Lightweight and efficient single-layer architecture
+- Moderate performance (45.7% recall, 29.5% F1-score)
+- Best choice for resource-constrained edge devices
+- Smallest model size with acceptable performance
 
 ### Model 3: Double LSTM
 ```
-LSTM(64) → Dropout(0.2) → LSTM(16) → Dense(1)
+LSTM(64) → Dropout(0.2) → LSTM(16) → TimeDistributed(Dense(1))
 ```
-- Two-layer architecture
-- Good performance (44% recall, 30% F1-score)
+- Two-layer LSTM architecture for temporal feature extraction
+- Moderate performance (45.7% recall, 29.5% F1-score)
+- Suitable for multi-step sequence reconstruction
 
 ### Model 4: Deep LSTM
 ```
-LSTM(128) → Dropout → LSTM(64) → Dropout → LSTM(16) → TimeDistributed(Dense(1))
+LSTM(128) → Dropout(0.2) → LSTM(64) → Dropout(0.2) → LSTM(16) → TimeDistributed(Dense(1))
 ```
 - Three-layer deep LSTM architecture (not a true autoencoder)
-- Good performance (45% recall, 31% F1-score)
-- Captures complex temporal dependencies
+- Moderate performance (48.1% recall, 31.1% F1-score)
+- Captures complex temporal dependencies with regularization
 
 ### Model 5: CNN-LSTM Hybrid
 ```
-Conv1D(32) → MaxPool1D → LSTM(64) → Dropout → LSTM(16) → TimeDistributed(Dense(1))
+Conv1D(32, kernel=2) → MaxPool1D(2) → LSTM(64) → Dropout(0.2) → LSTM(16) → Dense(1)
 ```
 - Combines convolutional feature extraction with LSTM temporal modeling
-- Good performance (46% recall, 31% F1-score)
-- Effective for pattern recognition in sequential data
+- **Returns single value per sequence** (not full reconstruction)
+- Moderate performance (47.1% recall, 30.4% F1-score)
+- Effective for pattern recognition and sequence-level anomaly scoring
 
 ### Model 6: Bidirectional LSTM
 ```
-Bidirectional(LSTM(64)) → Dropout → Bidirectional(LSTM(16)) → TimeDistributed(Dense(1))
+Bidirectional(LSTM(64)) → Dropout(0.2) → Bidirectional(LSTM(16)) → TimeDistributed(Dense(1))
 ```
 - Processes sequences in both forward and backward directions
-- Strong performance (70% recall, 47% F1-score)
-- Better context understanding for anomaly detection
+- **Second best performance** (51.2% recall, 33.1% F1-score)
+- Better context understanding from bidirectional processing
+- More complex than Model 1 but with lower recall
 
 ## 🧠 How It Works
 

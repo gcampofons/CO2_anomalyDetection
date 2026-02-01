@@ -596,9 +596,9 @@ class Visualizer:
         reconstructed_list: List[np.ndarray],
         save_name: Optional[str] = None
     ):
-        """Compare original and reconstructed sequences."""
-        fragment = self.config.plot_fragment_size
-        all_original = np.concatenate([original[i] for i in range(min(fragment, len(original)))])
+        """Compare original and reconstructed sequences for CO2 feature only."""
+        # Select a sample sequence for detailed comparison
+        sample_idx = 1000  # Choose a representative sequence
         
         n_models = len(reconstructed_list)
         n_cols = 2
@@ -607,22 +607,38 @@ class Visualizer:
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, 4*n_rows))
         axes = axes.ravel() if n_models > 1 else [axes]
         
+        original_sample = original[sample_idx, :, 0]  # CO2 series for the sample
+        
         for i, reconstructed in enumerate(reconstructed_list):
-            all_reconstructed = np.concatenate([reconstructed[j] for j in range(min(fragment, len(reconstructed)))])
             ax = axes[i]
-            ax.plot(all_original, label='Original', linewidth=2, alpha=0.7)
-            ax.plot(all_reconstructed, label='Reconstructed', linewidth=2, alpha=0.7)
-            ax.set_xlabel('Time Step')
-            ax.set_ylabel('Normalized Value')
-            ax.set_title(f'Model {i+1}: Original vs Reconstructed')
+            ax.plot(original_sample, label='Original CO2', linewidth=2, alpha=0.7)
+            
+            # Handle different model architectures appropriately
+            if reconstructed.shape[1] == 1:
+                # CNN-LSTM outputs a single value per sequence - plot as horizontal line
+                reconstructed_value = reconstructed[sample_idx, 0, 0]
+                ax.axhline(y=reconstructed_value, label=f'Model {i+1} Reconstructed', 
+                          linewidth=2, alpha=0.7, color='red')
+            else:
+                # Other models reconstruct the full sequence
+                ax.plot(reconstructed[sample_idx, :, 0], label=f'Model {i+1} Reconstructed', 
+                       linewidth=2, alpha=0.7)
+            
+            ax.set_xlabel('Timestep')
+            ax.set_ylabel('Normalized CO2 Value')
+            ax.set_title(f'Model {i+1}: Original vs Reconstructed (Sample {sample_idx})')
             ax.legend()
             ax.grid(alpha=0.3)
+            # Set consistent y-limits for better comparison
+            ax.set_ylim(-2, 2)
         
         # Hide unused subplots
-        for j in range(i+1, len(axes)):
+        for j in range(len(reconstructed_list), len(axes)):
             axes[j].set_visible(False)
             
         plt.tight_layout()
+        plt.savefig('output/reconstruction_comparison.png', dpi=300, bbox_inches='tight')
+        print("Saved plot: reconstruction_comparison.png")
         if save_name:
             plt.savefig(self.config.output_dir / f"{save_name}.png", dpi=150, bbox_inches='tight')
         # plt.show()  # Removed to prevent blocking execution
