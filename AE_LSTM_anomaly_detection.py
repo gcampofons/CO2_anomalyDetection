@@ -51,11 +51,37 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Config:
-    """Configuration parameters for the anomaly detection pipeline."""
+    """Configuration parameters for the CO2 anomaly detection pipeline.
+
+    This dataclass contains all configurable parameters for data processing,
+    model training, evaluation, and visualization. Parameters are validated
+    in the __post_init__ method.
+
+    Attributes:
+        outlier_treatment: Method for handling outliers ('NONE', 'ELIMINATION', 'CAPPING').
+        normalization: Data normalization method ('STANDARD', 'MINMAX', 'ROBUST').
+        upper_limit: CO2 threshold in PPM for anomaly detection.
+        resampling_frequency: Pandas frequency string for data resampling.
+        contamination_rate: Expected proportion of anomalies in the data.
+        time_steps: Number of time steps in LSTM sequences.
+        learning_rate: Learning rate for model training.
+        epochs: Maximum number of training epochs.
+        batch_size: Batch size for training.
+        validation_split: Fraction of data for validation.
+        early_stopping_patience: Epochs to wait before early stopping.
+        loss_function: Loss function for training ('mae', 'mse').
+        threshold_loss: Loss type for threshold calculation ('MAE', 'MSE').
+        anomaly_loss: Loss type for anomaly detection ('MAE', 'MSE').
+        threshold_percentile: Percentile for anomaly threshold calculation.
+        plot_fragment_size: Number of sequences to show in reconstruction plots.
+        random_seed: Random seed for reproducibility.
+        data_file: Path to the input CSV data file.
+        output_dir: Directory for saving outputs and models.
+    """
     # Data processing
     outlier_treatment: str = 'NONE'  # NONE, ELIMINATION, or CAPPING
     normalization: str = 'ROBUST'  # STANDARD, MINMAX, or ROBUST
-    upper_limit: int = 968  # Only for ground truth definition
+    upper_limit: int = 1000  # CO2 threshold for anomaly detection (1000 ppm = recommended indoor limit)
     resampling_frequency: str = '5T'
     contamination_rate: float = 0.05  # Expected % of anomalies in data
     
@@ -82,7 +108,11 @@ class Config:
     output_dir: Path = Path('output')
     
     def __post_init__(self):
-        """Validate configuration parameters."""
+        """Validate configuration parameters after initialization.
+
+        Raises:
+            ValueError: If any configuration parameter has an invalid value.
+        """
         valid_treatments = ['NONE', 'ELIMINATION', 'CAPPING']
         valid_normalizations = ['STANDARD', 'MINMAX', 'ROBUST']
         valid_losses = ['mae', 'mse']
@@ -106,6 +136,11 @@ class DataProcessor:
     """Handles data loading, preprocessing, and transformation."""
     
     def __init__(self, config: Config):
+        """Initialize the DataProcessor.
+
+        Args:
+            config: Configuration object containing data processing parameters.
+        """
         self.config = config
         self.scaler = None
         
@@ -129,7 +164,7 @@ class DataProcessor:
         
         df = pd.read_csv(
             self.config.data_file, 
-            usecols=['date_time', 'co2', 'sensor_id']
+            usecols=['date_time', 'co2', 'sensor_id', 'temp', 'hum', 'bat']
         )
         df['date_time'] = pd.to_datetime(df['date_time'])
         df_sorted = df.sort_values(by='date_time')
@@ -160,7 +195,14 @@ class DataProcessor:
         return df_concatenated, df_uncapped
     
     def _process_sensor_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Process individual sensor data."""
+        """Process individual sensor data for consistency.
+
+        Args:
+            df: Raw sensor data DataFrame.
+
+        Returns:
+            Processed DataFrame with cleaned timestamps and removed sensor_id.
+        """
         df['date_time'] = pd.to_datetime(df['date_time'])
         # Round timestamps to nearest minute to handle second variations
         df['date_time'] = df['date_time'].dt.round('T')
@@ -171,7 +213,14 @@ class DataProcessor:
         return df
     
     def test_normality(self, data: pd.DataFrame) -> Tuple[float, float]:
-        """Perform Shapiro-Wilk test for normality."""
+        """Perform Shapiro-Wilk test for normality on the data.
+
+        Args:
+            data: DataFrame containing the data to test.
+
+        Returns:
+            Tuple of (test_statistic, p_value) from the Shapiro-Wilk test.
+        """
         np.random.seed(self.config.random_seed)
         stat, p_value = shapiro(data)
         alpha = 0.05
@@ -185,7 +234,14 @@ class DataProcessor:
         return stat, p_value
     
     def apply_outlier_treatment(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply outlier treatment based on configuration."""
+        """Apply outlier treatment based on configuration.
+
+        Args:
+            df: Input DataFrame with CO2 data.
+
+        Returns:
+            DataFrame with outliers treated according to config.outlier_treatment.
+        """
         logger.info(f"Applying outlier treatment: {self.config.outlier_treatment}")
         
         if self.config.outlier_treatment == 'NONE':
@@ -215,7 +271,15 @@ class DataProcessor:
         train_data: pd.DataFrame, 
         test_data: pd.DataFrame
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Normalize data using specified scaler."""
+        """Normalize data using specified scaler.
+
+        Args:
+            train_data: Training data to fit the scaler.
+            test_data: Test data to transform.
+
+        Returns:
+            Tuple of (normalized_train, normalized_test) as numpy arrays.
+        """
         logger.info(f"Normalizing data using {self.config.normalization} scaler")
         
         scaler_map = {
@@ -232,16 +296,19 @@ class DataProcessor:
     
     @staticmethod
     def create_sequences(values: np.ndarray, time_steps: int) -> np.ndarray:
-        """
-        Create sequences for LSTM input.
-        
+        """Create sequences for LSTM input from time series data.
+
         Args:
-            values: Input data array
-            time_steps: Number of time steps in each sequence
-            
+            values: Input data array of shape (n_samples, n_features).
+            time_steps: Number of time steps in each sequence.
+
         Returns:
-            Array of sequences
+            Array of sequences with shape (n_sequences, time_steps, n_features).
         """
+        output = []
+        for i in range(len(values) - time_steps + 1):
+            output.append(values[i:(i + time_steps)])
+        return np.stack(output)
         output = []
         for i in range(len(values) - time_steps + 1):
             output.append(values[i:(i + time_steps)])
@@ -252,17 +319,24 @@ class ModelBuilder:
     """Builds and manages LSTM autoencoder models."""
     
     def __init__(self, config: Config):
+        """Initialize the ModelBuilder.
+
+        Args:
+            config: Configuration object containing model parameters.
+        """
         self.config = config
         
     def build_models(self, input_shape: Tuple[int, int]) -> List[Sequential]:
-        """
-        Build multiple LSTM autoencoder architectures.
-        
+        """Build multiple LSTM autoencoder architectures.
+
+        Creates 6 different model variants: Simple AE-LSTM, Single LSTM,
+        Double LSTM, Deep LSTM, CNN-LSTM Hybrid, and Bidirectional LSTM.
+
         Args:
-            input_shape: Shape of input sequences (time_steps, features)
-            
+            input_shape: Shape of input sequences (time_steps, n_features).
+
         Returns:
-            List of compiled Keras models
+            List of compiled Keras Sequential models.
         """
         logger.info("Building LSTM autoencoder models")
         
@@ -270,7 +344,9 @@ class ModelBuilder:
             self._build_model_1(input_shape),
             self._build_model_2(input_shape),
             self._build_model_3(input_shape),
-            self._build_model_4(input_shape)
+            self._build_model_4(input_shape),
+            self._build_model_5(input_shape),
+            self._build_model_6(input_shape)
         ]
         
         # Compile all models
@@ -323,12 +399,40 @@ class ModelBuilder:
             TimeDistributed(Dense(input_shape[1]))
         ], name='AE_LSTM_Deep')
         return model
+    
+    def _build_model_5(self, input_shape: Tuple[int, int]) -> Sequential:
+        """CNN-LSTM hybrid for spatial-temporal feature extraction."""
+        model = Sequential([
+            tf.keras.layers.Conv1D(32, kernel_size=2, activation='relu', input_shape=input_shape),
+            tf.keras.layers.MaxPooling1D(pool_size=2),
+            LSTM(64, activation='tanh', return_sequences=True),
+            Dropout(rate=0.2),
+            LSTM(16, activation='tanh', return_sequences=True),
+            TimeDistributed(Dense(input_shape[1]))
+        ], name='CNN_LSTM_Hybrid')
+        return model
+    
+    def _build_model_6(self, input_shape: Tuple[int, int]) -> Sequential:
+        """Bidirectional LSTM for better temporal context."""
+        model = Sequential([
+            tf.keras.layers.Bidirectional(LSTM(64, activation='tanh', return_sequences=True), input_shape=input_shape),
+            Dropout(rate=0.2),
+            tf.keras.layers.Bidirectional(LSTM(32, activation='tanh', return_sequences=True)),
+            Dropout(rate=0.2),
+            TimeDistributed(Dense(input_shape[1]))
+        ], name='Bidirectional_LSTM')
+        return model
 
 
 class ModelTrainer:
     """Handles model training and evaluation."""
     
     def __init__(self, config: Config):
+        """Initialize the ModelTrainer.
+
+        Args:
+            config: Configuration object containing training parameters.
+        """
         self.config = config
         
     def train_models(
@@ -385,9 +489,9 @@ class ModelTrainer:
     ) -> np.ndarray:
         """Calculate reconstruction loss."""
         if loss_type == 'MAE':
-            return np.mean(np.abs(reconstructed - original), axis=1)
+            return np.mean(np.abs(reconstructed - original), axis=(1, 2))
         elif loss_type == 'MSE':
-            return np.mean(np.power(original - reconstructed, 2), axis=1)
+            return np.mean(np.power(original - reconstructed, 2), axis=(1, 2))
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
     
@@ -439,6 +543,11 @@ class Visualizer:
     """Handles all visualization tasks."""
     
     def __init__(self, config: Config):
+        """Initialize the Visualizer.
+
+        Args:
+            config: Configuration object containing visualization parameters.
+        """
         self.config = config
         sns.set_style('whitegrid')
         
@@ -457,7 +566,7 @@ class Visualizer:
         if save_name:
             plt.savefig(self.config.output_dir / f"{save_name}.png", dpi=150, bbox_inches='tight')
             logger.info(f"Saved plot: {save_name}.png")
-        plt.show()
+        # plt.show()  # Removed to prevent blocking execution
         
     def plot_training_history(self, histories: List[Dict], save_name: Optional[str] = None):
         """Plot training and validation loss for all models."""
@@ -479,7 +588,7 @@ class Visualizer:
         plt.tight_layout()
         if save_name:
             plt.savefig(self.config.output_dir / f"{save_name}.png", dpi=150, bbox_inches='tight')
-        plt.show()
+        # plt.show()  # Removed to prevent blocking execution
         
     def plot_reconstruction_comparison(
         self, 
@@ -516,11 +625,11 @@ class Visualizer:
         plt.tight_layout()
         if save_name:
             plt.savefig(self.config.output_dir / f"{save_name}.png", dpi=150, bbox_inches='tight')
-        plt.show()
+        # plt.show()  # Removed to prevent blocking execution
         
     def plot_anomalies(
         self, 
-        data: np.ndarray, 
+        data: pd.DataFrame, 
         anomalies_list: List[np.ndarray],
         labels: Optional[List[str]] = None,
         save_name: Optional[str] = None
@@ -532,13 +641,19 @@ class Visualizer:
         if n_plots == 1:
             axes = [axes]
         
+        co2_values = data['co2'].values
+        
         for i, (ax, anomalies) in enumerate(zip(axes, anomalies_list)):
-            ax.plot(data, label='CO2 Values', linewidth=1, alpha=0.7)
-            anomaly_indices = np.where(anomalies)[0]
+            ax.plot(co2_values, label='CO2 Values', linewidth=1, alpha=0.7)
+            # Adjust indices for sequence-based detection (mark last point of sequence)
+            sequence_indices = np.where(anomalies)[0]
+            anomaly_indices = sequence_indices + self.config.time_steps - 1
+            # Ensure indices are within bounds
+            anomaly_indices = anomaly_indices[anomaly_indices < len(co2_values)]
             if len(anomaly_indices) > 0:
                 ax.scatter(
                     anomaly_indices, 
-                    data[anomaly_indices], 
+                    co2_values[anomaly_indices], 
                     color='red', 
                     label=f'Anomalies ({len(anomaly_indices)})',
                     s=30,
@@ -554,7 +669,8 @@ class Visualizer:
         plt.tight_layout()
         if save_name:
             plt.savefig(self.config.output_dir / f"{save_name}.png", dpi=150, bbox_inches='tight')
-        plt.show()
+            logger.info(f"Saved plot: {save_name}.png")
+        # plt.show()  # Removed to prevent blocking execution
         
     def plot_confusion_matrices(
         self, 
@@ -585,7 +701,7 @@ class Visualizer:
         plt.tight_layout()
         if save_name:
             plt.savefig(self.config.output_dir / f"{save_name}.png", dpi=150, bbox_inches='tight')
-        plt.show()
+        # plt.show()  # Removed to prevent blocking execution
 
 
 class MetricsCalculator:
@@ -653,6 +769,11 @@ class ModelExporter:
     """Export models to various formats."""
     
     def __init__(self, config: Config):
+        """Initialize the ModelExporter.
+
+        Args:
+            config: Configuration object containing export parameters.
+        """
         self.config = config
         
     def save_models(
@@ -751,36 +872,66 @@ def identify_ground_truth_anomalies(
     upper_limit: float,
     config: Config
 ) -> np.ndarray:
-    """Identify ground truth anomalies based on multiple criteria."""
+    """Identify ground truth anomalies based on multiple criteria.
+
+    This function marks sequences as anomalous if they contain extreme CO2 values
+    or sudden jumps that exceed statistical thresholds.
+
+    Args:
+        sequences: Array of CO2 sequences, shape (n_sequences, seq_length, n_features).
+        upper_limit: Upper threshold for extreme CO2 values in PPM.
+        config: Configuration object containing anomaly detection parameters.
+
+    Returns:
+        Boolean array indicating which sequences are anomalous, shape (n_sequences,).
+
+    Note:
+        Uses 99th percentile of absolute changes as dynamic jump threshold.
+        Abnormal rate criterion is disabled as it was too sensitive.
+    """
     anomalies = np.zeros(len(sequences), dtype=bool)
+    
+    # Calculate dynamic threshold for sudden jumps based on dataset statistics
+    all_changes = []
+    for seq in sequences:
+        changes = np.abs(np.diff(seq.flatten()))
+        all_changes.extend(changes)
+    all_changes = np.array(all_changes)
+    jump_threshold = np.percentile(all_changes, 99)  # 99th percentile of changes
+    logger.info(f"Dynamic jump threshold (99th percentile): {jump_threshold:.2f} PPM")
     
     for i, seq in enumerate(sequences):
         # Criterion 1: Extreme values
         has_extreme = np.any(seq > upper_limit)
         
-        # Criterion 2: Sudden jumps (change > 100 PPM between consecutive readings)
+        # Criterion 2: Sudden jumps (change > dynamic threshold)
         changes = np.abs(np.diff(seq.flatten()))
-        has_sudden_jump = np.any(changes > 100)
+        has_sudden_jump = np.any(changes > jump_threshold)
         
-        # Criterion 3: Abnormal rate of change (very steep slope)
-        if len(seq) > 1:
-            rate_of_change = np.max(changes) / np.mean(seq)
-            has_abnormal_rate = rate_of_change > 0.25  # 25% change relative to mean
-        else:
-            has_abnormal_rate = False
+        # Criterion 3: Abnormal rate of change (removed, as it marks too many sequences as anomalies)
+        has_abnormal_rate = False
         
         # Mark as anomaly if any criterion is met
         anomalies[i] = has_extreme or has_sudden_jump or has_abnormal_rate
     
     logger.info(f"Ground truth anomalies: {anomalies.sum()} / {len(anomalies)} ({100*anomalies.sum()/len(anomalies):.1f}%)")
     logger.info(f"  - Extreme values: {sum(np.any(seq > upper_limit) for seq in sequences)}")
-    logger.info(f"  - Sudden jumps: {sum(np.any(np.abs(np.diff(seq.flatten())) > 100) for seq in sequences)}")
+    logger.info(f"  - Sudden jumps: {sum(np.any(np.abs(np.diff(seq.flatten())) > jump_threshold) for seq in sequences)}")
     
     return anomalies
 
 
 def main():
-    """Main execution pipeline."""
+    """Main execution pipeline for CO2 anomaly detection.
+
+    Orchestrates the complete workflow from data loading to model export:
+    1. Load and preprocess CO2 sensor data
+    2. Build and train multiple LSTM architectures
+    3. Evaluate models and detect anomalies
+    4. Export trained models for deployment
+
+    This function serves as the entry point when running the script directly.
+    """
     # Initialize configuration
     config = Config()
     
@@ -892,7 +1043,8 @@ def main():
     
     # Identify ground truth
     test_descaled = data_processor.scaler.inverse_transform(test_scaled)
-    test_descaled_sequences = DataProcessor.create_sequences(test_descaled, config.time_steps)
+    test_descaled_df = pd.DataFrame(test_descaled, columns=['co2', 'temp', 'hum', 'bat'])
+    test_descaled_sequences = DataProcessor.create_sequences(test_descaled_df, config.time_steps)
     ground_truth_anomalies = identify_ground_truth_anomalies(
         test_descaled_sequences,
         config.upper_limit,
@@ -903,7 +1055,7 @@ def main():
     all_anomalies = [ground_truth_anomalies] + predicted_anomalies
     labels = ['Ground Truth'] + [f'Model {i}' for i in range(1, len(predicted_anomalies)+1)]
     visualizer.plot_anomalies(
-        test_descaled,
+        test_descaled_df,
         all_anomalies,
         labels,
         'anomaly_detection'

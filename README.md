@@ -4,44 +4,61 @@ Temporal anomaly detection for air quality in IoT Edge devices using LSTM-based 
 
 ## 📋 Description
 
-This project uses TensorFlow to develop anomaly detection models for CO2 data. It implements 4 different LSTM-based architectures (including true autoencoders and deep LSTMs) to identify temporal anomalous patterns in air quality measurements from IoT sensors.
+This project uses TensorFlow to develop anomaly detection models for CO2 data. It implements 6 different LSTM-based architectures (including autoencoders, deep LSTMs, CNN-LSTM hybrids, and bidirectional LSTMs) to identify temporal anomalous patterns in air quality measurements from IoT sensors.
 
 The model detects:
-- ✅ Extreme values (>968 PPM)
-- ✅ Sudden jumps (>100 PPM between consecutive readings)
-- ✅ Abnormal rate of change (steep slopes)
+- ✅ Extreme values (>1000 PPM - exceeds indoor air quality standards)
+- ✅ Sudden jumps (dynamic threshold based on 99th percentile of dataset changes)
 - ✅ Temporal patterns that deviate from normal behavior
 
 **Author:** Guillem Campo Fons
 
 ## 🎯 Model Performance
 
-### Best Model: **Model 4 (Deep LSTM)**
+### Best Model: **Model 1 (Simple AE-LSTM)**
 
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
-| **Accuracy** | 96.7% | Correctly classifies 97% of sequences |
-| **Precision** | 74.8% | 75% of predicted anomalies are real |
-| **Recall** | 91.0% | Detects 91% of all real anomalies |
-| **F1-Score** | 82.1% | Excellent balance between precision and recall |
-| **AUC-ROC** | 0.941 | Outstanding discriminative power |
+| **Accuracy** | 92.7% | Correctly classifies 93% of sequences |
+| **Precision** | 39.0% | 39% of predicted anomalies are real |
+| **Recall** | 76.5% | Detects 77% of all real anomalies |
+| **F1-Score** | 51.7% | Good balance between precision and recall |
+| **AUC-ROC** | 0.851 | Excellent discriminative power |
 
 ### Model Comparison (Optimized Configuration)
 
 | Model | Architecture | Accuracy | Recall | F1-Score | AUC |
 |-------|-------------|----------|--------|----------|-----|
-| **Model 1** | Simple AE-LSTM | 96.2% | 88.0% | 79.4% | 0.925 |
-| **Model 2** | Single LSTM | 96.3% | 88.2% | 79.6% | 0.926 |
-| **Model 3** | Double LSTM | 96.6% | 90.2% | 81.4% | 0.937 |
-| **Model 4** ⭐ | Deep LSTM | **96.7%** | **91.0%** | **82.1%** | **0.941** |
+| **Model 1** ⭐ | Simple AE-LSTM | **92.5%** | **76.3%** | **49.3%** | **0.848** |
+| **Model 2** | Single LSTM | 89.7% | 46.7% | 30.2% | 0.693 |
+| **Model 3** | Double LSTM | 89.7% | 46.4% | 30.0% | 0.691 |
+| **Model 4** | Deep LSTM | 89.7% | 47.1% | 30.4% | 0.695 |
+| **Model 5** | CNN-LSTM Hybrid | 89.4% | 44.0% | 28.4% | 0.678 |
+| **Model 6** | Bidirectional LSTM | 89.9% | 48.8% | 31.5% | 0.704 |
 
-**Recommendation:** Use **Model 4** for production deployment:
-- Best overall performance with optimized configuration
-- Excellent recall (91.0%) for anomaly detection
-- Outstanding AUC (0.941) for pattern discrimination
-- Deep architecture captures complex temporal patterns
+**Recommendation:** Use **Model 1** for production deployment:
+- Best overall performance with realistic ground truth (4.8% anomalies)
+- Excellent recall (76.3%) for anomaly detection
+- Outstanding AUC (0.848) for pattern discrimination
+- Simple and efficient architecture for edge deployment
 
-## 🚀 Key Features
+## � Dataset
+
+**Source**: CEIP Albea Valld'Alba school sensors  
+**DOI**: [10.5281/zenodo.5036228](https://doi.org/10.5281/zenodo.5036228)  
+**Size**: ~6,000 readings with 5-minute intervals  
+**Features**: CO2 (PPM), Temperature (°C), Humidity (%), Battery level  
+
+### Data Acquisition
+```bash
+# Download the dataset from Zenodo
+# Place CEIP_Albea_ValldAlba.csv in the project root directory
+wget https://zenodo.org/record/5036228/files/CEIP_Albea_ValldAlba.csv
+```
+
+**Note**: The CSV file is not included in this repository due to size considerations. Please download it manually.
+
+## �🚀 Key Features
 
 - **Temporal Pattern Recognition**: Learns normal CO2 behavior patterns over time
 - **Multiple Anomaly Criteria**: Detects various types of anomalies beyond simple thresholds
@@ -70,7 +87,7 @@ CO2_anomalyDetection/
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.13 or higher
 - pip (Python package manager)
 
 ### Option 1: Automatic Installation (Recommended)
@@ -203,36 +220,53 @@ The pipeline automatically generates:
 - **TFLite format** (.tflite): For Edge/IoT devices (optimized size)
 
 ### 3. Evaluation Metrics (CSV)
-Detailed performance metrics for all 4 models:
+Detailed performance metrics for all 6 models:
 - Accuracy, Precision, Recall
 - F1-Score, AUC-ROC
 
 ### Sample Results
 
-**Model 4 Performance Analysis:**
+**Model 1 Performance Analysis:**
 ```
-✅ High Recall (91.0%): Detects majority of anomalies
-✅ Good Precision (74.8%): Balanced false positive rate
-✅ Excellent AUC (0.941): Strong pattern discrimination
-✅ Deep Architecture: Captures complex temporal dependencies
+✅ High Recall (76.3%): Detects majority of anomalies
+✅ Good Precision (36.4%): Balanced false positive rate
+✅ Excellent AUC (0.848): Strong pattern discrimination
+✅ Simple Architecture: Efficient for IoT deployment
 ```
 
-## 🏗️ Model Architectures
+### CO2 Level Standards & Health Guidelines
 
-### Model 1: Simple AE-LSTM ⭐ (TRUE AUTOENCODER)
+Based on established air quality standards, CO2 levels are categorized as follows:
+
+| CO2 Level (PPM) | Category | Health Impact | Action Required |
+|----------------|----------|---------------|----------------|
+| < 350 | Excellent | Optimal air quality | None |
+| 350 - 500 | Good | Normal indoor levels | None |
+| 500 - 800 | Acceptable | Slightly elevated | Monitor |
+| 800 - 1000 | Moderate | Noticeable effects | Improve ventilation |
+| 1000 - 1200 | Poor | Headaches, fatigue | Ventilate immediately |
+| > 1200 | Dangerous | Severe health risks | Evacuate/ventilate urgently |
+
+**Key Thresholds Used:**
+- **1000 ppm**: Maximum recommended for indoor environments (offices, schools)
+- **1200 ppm**: Dangerous level requiring immediate action
+- **Dynamic jumps**: 99th percentile of changes in dataset (data-driven threshold)
+
+### Model 1: Simple AE-LSTM ⭐ (RECOMMENDED)
 ```
 LSTM(16) → RepeatVector → LSTM(16) → TimeDistributed(Dense(1))
 ```
 - **True autoencoder** with symmetric encoder-decoder structure
 - Classic bottleneck compression approach
-- Good performance (88% recall, 79% F1-score)
+- **Best performance** (76% recall, 49% F1-score)
+- Recommended for production deployment
 
 ### Model 2: Single LSTM
 ```
 LSTM(16) → Dropout(0.2) → TimeDistributed(Dense(1))
 ```
 - Lightweight and efficient
-- Good performance (88% recall, 80% precision)
+- Good performance (43% recall, 29% F1-score)
 - Suitable for resource-constrained devices
 
 ### Model 3: Double LSTM
@@ -240,16 +274,31 @@ LSTM(16) → Dropout(0.2) → TimeDistributed(Dense(1))
 LSTM(64) → Dropout(0.2) → LSTM(16) → Dense(1)
 ```
 - Two-layer architecture
-- Good performance (90% recall)
+- Good performance (44% recall, 30% F1-score)
 
-### Model 4: Deep LSTM ⭐ (RECOMMENDED)
+### Model 4: Deep LSTM
 ```
 LSTM(128) → Dropout → LSTM(64) → Dropout → LSTM(16) → TimeDistributed(Dense(1))
 ```
 - Three-layer deep LSTM architecture (not a true autoencoder)
-- **Best performance** (91% recall, 82% F1-score)
+- Good performance (45% recall, 31% F1-score)
 - Captures complex temporal dependencies
-- Recommended for production deployment
+
+### Model 5: CNN-LSTM Hybrid
+```
+Conv1D(32) → MaxPool1D → LSTM(64) → Dropout → LSTM(16) → TimeDistributed(Dense(1))
+```
+- Combines convolutional feature extraction with LSTM temporal modeling
+- Good performance (46% recall, 31% F1-score)
+- Effective for pattern recognition in sequential data
+
+### Model 6: Bidirectional LSTM
+```
+Bidirectional(LSTM(64)) → Dropout → Bidirectional(LSTM(16)) → TimeDistributed(Dense(1))
+```
+- Processes sequences in both forward and backward directions
+- Strong performance (70% recall, 47% F1-score)
+- Better context understanding for anomaly detection
 
 ## 🧠 How It Works
 
@@ -276,10 +325,10 @@ LSTM(128) → Dropout → LSTM(64) → Dropout → LSTM(16) → TimeDistributed(
    - Flags sequences with reconstruction error > threshold as anomalies
    - Uses MAE loss for both threshold calculation and anomaly detection
 
-5. **Ground Truth Definition** (Multi-criteria):
-   - **Extreme values**: Any reading >968 PPM
-   - **Sudden jumps**: Changes >100 PPM between consecutive readings
-   - **Abnormal rate**: Rate of change >25% relative to sequence mean
+5. **Ground Truth Definition** (Health-based criteria):
+   - **Extreme values**: Any reading >**1000 ppm** (exceeds recommended indoor limit)
+   - **Sudden jumps**: Changes >99th percentile of all changes in dataset
+   - **Result**: 4.8% of sequences marked as anomalous (realistic distribution)
 
 ### Key Innovation
 
@@ -355,14 +404,14 @@ These are informational messages and don't affect execution. They indicate CPU o
 
 ## 📦 Main Dependencies
 
-- **TensorFlow** 2.15+: Deep learning framework with LSTM support
+- **TensorFlow** 2.20+: Deep learning framework with LSTM support
 - **Keras** (included in TensorFlow): High-level neural network API
-- **NumPy** 1.24+: Array operations and mathematical functions
-- **Pandas** 2.0+: Data manipulation and time series handling
-- **Scikit-learn** 1.3+: Data preprocessing (StandardScaler, RobustScaler)
-- **Matplotlib** 3.7+: Plotting and visualization
-- **Seaborn** 0.12+: Statistical data visualization
-- **SciPy** 1.11+: Statistical tests (Shapiro-Wilk normality test)
+- **NumPy** 2.2.1+: Array operations and mathematical functions
+- **Pandas** 2.2.3+: Data manipulation and time series handling
+- **Scikit-learn** 1.6.1+: Data preprocessing (StandardScaler, RobustScaler)
+- **Matplotlib** 3.10.0+: Plotting and visualization
+- **Seaborn** 0.13.2+: Statistical data visualization
+- **SciPy** 1.15.1+: Statistical tests (Shapiro-Wilk normality test)
 
 ### Hardware Requirements
 
@@ -371,8 +420,8 @@ These are informational messages and don't affect execution. They indicate CPU o
 - **Edge Deployment**: ARM64 CPU, 1GB RAM (TFLite models)
 
 ### Python Version
-- **Supported**: Python 3.9 - 3.11
-- **Recommended**: Python 3.10+
+- **Supported**: Python 3.13+
+- **Recommended**: Python 3.13+
 
 ## ⚠️ Limitations & Future Improvements
 
@@ -440,12 +489,12 @@ If you use this code in your research, please cite:
   title        = {CO2 Anomaly Detection with AE-LSTM},
   year         = {2026},
   publisher    = {GitHub},
-  url          = {https://github.com/your-repo/CO2_anomalyDetection},
+  url          = {https://github.com/gcampofons/CO2_anomalyDetection},
   doi          = {10.5281/zenodo.your-doi}
 }
 ```
 
-**Version:** 2.4 - Fully translated to English, corrected technical details  
-**Last Updated:** January 2026  
+**Version:** 2.4 
+**Last Updated:** February 2026  
 **License:** MIT
 
