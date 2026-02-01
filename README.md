@@ -237,26 +237,26 @@ Detailed performance metrics for all 6 models:
 ## 📈 Model Visualizations
 
 ### Data Exploration
-![CO2 Raw Data](output/co2_raw_data.png)
+![CO2 Raw Data](docs/images/co2_raw_data.png)
 *Figure 1: Raw CO2 sensor readings over time, showing natural fluctuations and potential anomalies.*
 
-![CO2 Treated Data](output/co2_treated_data.png)
+![CO2 Treated Data](docs/images/co2_treated_data.png)
 *Figure 2: Processed data after outlier treatment, ready for model training.*
 
 ### Training Performance
-![Training History](output/training_history.png)
+![Training History](docs/images/training_history.png)
 *Figure 3: Training and validation loss curves for all 6 models, showing convergence and potential overfitting.*
 
 ### Model Reconstruction Quality
-![Reconstruction Comparison](output/reconstruction_comparison.png)
+![Reconstruction Comparison](docs/images/reconstruction_comparison.png)
 *Figure 4: Comparison between original and reconstructed sequences, demonstrating how well each model learns normal patterns.*
 
 ### Anomaly Detection Results
-![Anomaly Detection](output/anomaly_detection.png)
+![Anomaly Detection](docs/images/anomaly_detection.png)
 *Figure 5: Detected anomalies overlaid on CO2 time series. Red markers indicate sequences flagged as anomalous by each model.*
 
 ### Confusion Matrices
-![Confusion Matrices](output/confusion_matrices.png)
+![Confusion Matrices](docs/images/confusion_matrices.png)
 *Figure 6: Confusion matrices for all models, showing true positives, false positives, true negatives, and false negatives.*
 
 ### CO2 Level Standards & Health Guidelines
